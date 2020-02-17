@@ -4,7 +4,7 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 
-import scala.util.Random
+import java.util.Random
 
 object Demo extends App {
 
@@ -37,11 +37,47 @@ object Demo extends App {
     .take(50)          // take 50 most rated
     .map(_._1)         // get their ids
 
-  println(mostRatedMovieIds)
+  println("mostRatedMovieIds:")
   mostRatedMovieIds.foreach(movie => println(movies(movie)))
+
   val random = new Random(0)
   val selectedMovies = mostRatedMovieIds.filter(x => random.nextDouble() < 0.2)
     .map(x => (x, movies(x)))
     .toSeq
+  println("selected movies:")
   selectedMovies.foreach(println)
+
+  val myRatings = elicitateRatings(selectedMovies)
+  val myRatingsRDD = sc.parallelize(myRatings)
+  def elicitateRatings(movies: Seq[(Int, String)]) = {
+    val prompt = "Please rate the following movie (1-5 (best), or 0 if not seen):"
+    println(prompt)
+    val ratings = movies.flatMap { x =>
+      var rating: Option[Rating] = None
+      var valid = false
+      while (!valid) {
+        print(x._2 + ": ")
+        try {
+          val r = Console.readInt
+          if (r < 0 || r > 5) {
+            println(prompt)
+          } else {
+            valid = true
+            if (r > 0) {
+              rating = Some(Rating(0, x._1, r))
+            }
+          }
+        } catch {
+          case e: Exception => println(prompt)
+        }
+      }
+      rating match {
+        case Some(r) => Iterator(r)
+        case None => Iterator.empty
+      }
+    }
+    ratings
+  }
+  println("my ratings rdd:")
+  println(myRatingsRDD.foreach(println))
 }
