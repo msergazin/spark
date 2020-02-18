@@ -1,10 +1,9 @@
-import org.apache.spark.SparkConf
-import org.apache.spark.SparkContext
-import org.apache.spark.SparkContext._
-import org.apache.spark.rdd.RDD
-import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
+package movie_recommender
 
 import java.util.Random
+
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.mllib.recommendation.Rating
 
 object Demo extends App {
 
