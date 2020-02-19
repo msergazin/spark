@@ -85,6 +85,7 @@ object Graphx extends App {
 
 
   // Find the oldest follower for each user
+  /*olderst follower: (1,(David,42))*/
   val oldestFollower: VertexRDD[(String, PartitionID)] = userGraph.aggregateMessages[(String, PartitionID)](
     // For each edge send a message to the destination vertex with the attribute of the source vertex
     sendMsg = { triplet => triplet.sendToDst(triplet.srcAttr.name, triplet.srcAttr.age) },
@@ -105,4 +106,6 @@ object Graphx extends App {
   }.collect.foreach {
     case (id, str) => println(str)
   }
+
+
 }
