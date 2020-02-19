@@ -4,6 +4,35 @@ import org.apache.spark.graphx._
 import org.apache.spark.rdd.RDD
 
 object Graphx extends App {
+  private def namePeopleOver30() = {
+    /*name of people over 30*/
+    graph.vertices.filter { case (id, (name, age)) => age > 30 }.collect.foreach {
+      case (id, (name, age)) => println(s"$name is $age")
+    }
+  }
+  private def whoLikesWhom() = {
+    /*who likes whom*/
+    for (triplet <- graph.triplets.collect) {
+      println(s"${triplet.srcAttr._1} " + {
+        if (triplet.attr > 5) "loves " else "likes "
+      } + " ${triplet.dstAttr._1}")
+    }
+  }
+  private def printNameAndLilkedByWhom = {
+    /*User 1 is called Alice and is liked by 2 people.*/
+    userGraph.vertices.foreach { v =>
+      println(s"User ${v._1} is called ${v._2.name} and is liked by ${v._2.inDeg} people")
+    }
+  }
+  private def usersWhoAreLikeByTheSameNumberOfPoepleTheyLike = {
+    //  Print the names of the users who are liked by the same number of people they like.
+    userGraph.vertices.filter {
+      case (id, u) => u.inDeg == u.outDeg
+    }.collect.foreach {
+      case (id, property) => println(property.name)
+    }
+  }
+
   val vertexArray = Array(
     (1L, ("Alice", 28)),
     (2L, ("Bob", 27)),
@@ -12,6 +41,7 @@ object Graphx extends App {
     (5L, ("Ed", 55)),
     (6L, ("Fran", 50))
   )
+  /*srcId, dstId, attr*/
   val edgeArray = Array(
     Edge(2L, 1L, 7),
     Edge(2L, 4L, 2),
@@ -26,72 +56,60 @@ object Graphx extends App {
   val conf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("graphx").set("spark.driver.host", "localhost")
   val sc: SparkContext = new SparkContext(conf)
 
-  val vertexRDD: RDD[(Long, (String, Int))] = sc.parallelize(vertexArray)
-  val edgeRDD: RDD[Edge[Int]] = sc.parallelize(edgeArray)
+  /*id, (name, age)*/
+  val vertexRDD: RDD[(VertexId, (String, PartitionID))] = sc.parallelize(vertexArray)
+  /*srcId, dstId, attr = likes*/
+  val edgeRDD: RDD[Edge[PartitionID]] = sc.parallelize(edgeArray)
   /*User Name and Age and the edge property - number of Likes*/
-  val graph: Graph[(String, Int), Int] = Graph(vertexRDD, edgeRDD)
+  val graph: Graph[(String, PartitionID), PartitionID] = Graph(vertexRDD, edgeRDD)
 
-  /*name of people over 30*/
-  graph.vertices.filter {case (id, (name, age)) => age > 30}.collect.foreach {
-    case (id, (name, age)) => println(s"$name is $age")
-  }
-
-  /*who likes whom*/
-  for (triplet <- graph.triplets.collect) {
-    println(s"${triplet.srcAttr._1} " + {if (triplet.attr > 5) "loves " else "likes "} +" ${triplet.dstAttr._1}")
-  }
+//  namePeopleOver30()
+//  whoLikesWhom()
 
   // Define a class to more clearly model the user property
-  case class User(name: String, age: Int, inDeg: Int, outDeg: Int)
+  case class User(name: String, age: PartitionID, inDeg: PartitionID, outDeg: PartitionID)
   // Create a user Graph
-  val initialUserGraph: Graph[User, Int] = graph.mapVertices{ case (id, (name, age)) => User(name, age, 0, 0) }
-
+  /*triplet: ((2,User(Bob,27,0,0)),(1,User(Alice,28,0,0)),7)*/
+  val initialUserGraph: Graph[User, PartitionID] = graph.mapVertices{ case (id, (name, age)) => User(name, age, 0, 0) }
 
   // Fill in the degree information
+//  ug: ((2,User(Bob,27,2,2)),(1,User(Alice,28,2,0)),7)
   val userGraph = initialUserGraph.outerJoinVertices(initialUserGraph.inDegrees) {
     case (id, u, inDegOpt) => User(u.name, u.age, inDegOpt.getOrElse(0), u.outDeg)
   }.outerJoinVertices(initialUserGraph.outDegrees) {
     case (id, u, outDegOpt) => User(u.name, u.age, u.inDeg, outDegOpt.getOrElse(0))
   }
 
-  /*User 1 is called Alice and is liked by 2 people.*/
-  userGraph.vertices.foreach{ v =>
-    println(s"User ${v._1} is called ${v._2.name} and is liked by ${v._2.inDeg} people")
-  }
+  printNameAndLilkedByWhom
+  usersWhoAreLikeByTheSameNumberOfPoepleTheyLike
 
-//  Print the names of the users who are liked by the same number of people they like.
-  userGraph.vertices.filter {
-    case (id, u) => u.inDeg == u.outDeg
-  }.collect.foreach {
-    case (id, property) => println(property.name)
-  }
 
   // Find the oldest follower for each user
-  val oldestFollower: VertexRDD[(String, Int)] = userGraph.aggregateMessages[(String, Int)](
+  val oldestFollower: VertexRDD[(String, PartitionID)] = userGraph.aggregateMessages[(String, PartitionID)](
     // For each edge send a message to the destination vertex with the attribute of the source vertex
     edge => Iterator((edge.dstId, (edge.srcAttr.name, edge.srcAttr.age))),
     // To combine messages take the message for the older follower
     (a, b) => if (a._2 > b._2) a else b
   )
-
-  userGraph.vertices.leftJoin(oldestFollower) { (id, user, optOldestFollower) =>
-    /**
-     * Implement: Generate a string naming the oldest follower of each user
-     * Note: Some users may have no messages optOldestFollower.isEmpty if they have no followers
-     *
-     * Try using the match syntax:
-     *
-     *  optOldestFollower match {
-     *    case None => "No followers! implement me!"
-     *    case Some((name, age)) => "implement me!"
-     *  }
-     *
-     */
-    optOldestFollower match {
-      case None => "no followers!"
-      case Some((name, age)) => name
-    }
-  }.collect.foreach {
-    case (id, str) => println(str)
-  }
+//
+//  userGraph.vertices.leftJoin(oldestFollower) { (id, user, optOldestFollower) =>
+//    /**
+//     * Implement: Generate a string naming the oldest follower of each user
+//     * Note: Some users may have no messages optOldestFollower.isEmpty if they have no followers
+//     *
+//     * Try using the match syntax:
+//     *
+//     *  optOldestFollower match {
+//     *    case None => "No followers! implement me!"
+//     *    case Some((name, age)) => "implement me!"
+//     *  }
+//     *
+//     */
+//    optOldestFollower match {
+//      case None => "no followers!"
+//      case Some((name, age)) => name
+//    }
+//  }.collect.foreach {
+//    case (id, str) => println(str)
+//  }
 }
