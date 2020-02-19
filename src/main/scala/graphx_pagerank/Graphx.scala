@@ -80,36 +80,29 @@ object Graphx extends App {
     case (id, u, outDegOpt) => User(u.name, u.age, u.inDeg, outDegOpt.getOrElse(0))
   }
 
-  printNameAndLilkedByWhom
-  usersWhoAreLikeByTheSameNumberOfPoepleTheyLike
+//  printNameAndLilkedByWhom
+//  usersWhoAreLikeByTheSameNumberOfPoepleTheyLike
 
 
   // Find the oldest follower for each user
   val oldestFollower: VertexRDD[(String, PartitionID)] = userGraph.aggregateMessages[(String, PartitionID)](
     // For each edge send a message to the destination vertex with the attribute of the source vertex
-    edge => Iterator((edge.dstId, (edge.srcAttr.name, edge.srcAttr.age))),
+    sendMsg = { triplet => triplet.sendToDst(triplet.srcAttr.name, triplet.srcAttr.age) },
     // To combine messages take the message for the older follower
-    (a, b) => if (a._2 > b._2) a else b
+    mergeMsg = {(a, b) => if (a._2 > b._2) a else b}
   )
-//
-//  userGraph.vertices.leftJoin(oldestFollower) { (id, user, optOldestFollower) =>
-//    /**
-//     * Implement: Generate a string naming the oldest follower of each user
-//     * Note: Some users may have no messages optOldestFollower.isEmpty if they have no followers
-//     *
-//     * Try using the match syntax:
-//     *
-//     *  optOldestFollower match {
-//     *    case None => "No followers! implement me!"
-//     *    case Some((name, age)) => "implement me!"
-//     *  }
-//     *
-//     */
-//    optOldestFollower match {
-//      case None => "no followers!"
-//      case Some((name, age)) => name
-//    }
-//  }.collect.foreach {
-//    case (id, str) => println(str)
-//  }
+
+  println("olf:"+oldestFollower.count())//empty
+  for (of <- oldestFollower) {
+    println("olderst follower: " + of)
+  }
+
+  userGraph.vertices.leftJoin(oldestFollower) { (id, user, optOldestFollower) =>
+    optOldestFollower match {
+      case None => s"${user.name} does not have any followers."
+      case Some((name, age)) => s"${name} is the oldest follower of ${user.name}."
+    }
+  }.collect.foreach {
+    case (id, str) => println(str)
+  }
 }
